@@ -1,0 +1,28 @@
+# --- python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.python-version
+
+# --- virtualenvs ---
+.venv/
+venv/
+
+# --- editor / OS ---
+.DS_Store
+.idea/
+.vscode/
+
+# --- project artifacts not needed for deployment ---
+archive_hai/
+notebooks/
+data/
+slides/
+
+# --- LaTeX cruft (if any deck files land here) ---
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
