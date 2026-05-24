@@ -1,5 +1,7 @@
 # CMAPSS Turbofan RUL — LightGBM + native SHAP
 
+**Live app:** https://dooling-cmapss-rul.streamlit.app/
+
 Interactive dashboard for supervised remaining-useful-life (RUL) classification
 on the NASA CMAPSS Turbofan Engine Degradation Simulation dataset
 (Saxena & Goebel 2008).
