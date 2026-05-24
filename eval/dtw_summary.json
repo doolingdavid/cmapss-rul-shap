@@ -1,0 +1,78 @@
+[
+  {
+    "subset": "FD001",
+    "n_engines": 100,
+    "channels": [
+      "hpc_outlet_static_pressure_Ps30",
+      "fuel_flow_ratio_phi",
+      "lpt_outlet_temp_T50",
+      "bypass_ratio_BPR",
+      "physical_core_speed_Nc",
+      "hpc_outlet_pressure_P30",
+      "corrected_core_speed_NRc",
+      "hpt_coolant_bleed_W31"
+    ],
+    "sakoe_chiba_radius": 10,
+    "umap_n_neighbors": 15,
+    "umap_min_dist": 0.1,
+    "seed": 42,
+    "elapsed_seconds": 23.97
+  },
+  {
+    "subset": "FD002",
+    "n_engines": 260,
+    "channels": [
+      "bypass_ratio_BPR",
+      "hpc_outlet_static_pressure_Ps30",
+      "lpt_outlet_temp_T50",
+      "corrected_fan_speed_NRf",
+      "fuel_flow_ratio_phi",
+      "hpc_outlet_pressure_P30",
+      "lpc_outlet_temp_T24",
+      "hpc_outlet_temp_T30"
+    ],
+    "sakoe_chiba_radius": 10,
+    "umap_n_neighbors": 15,
+    "umap_min_dist": 0.1,
+    "seed": 42,
+    "elapsed_seconds": 79.67
+  },
+  {
+    "subset": "FD003",
+    "n_engines": 100,
+    "channels": [
+      "hpc_outlet_static_pressure_Ps30",
+      "physical_core_speed_Nc",
+      "corrected_fan_speed_NRf",
+      "lpt_outlet_temp_T50",
+      "corrected_core_speed_NRc",
+      "bleed_enthalpy_htBleed",
+      "physical_fan_speed_Nf",
+      "fuel_flow_ratio_phi"
+    ],
+    "sakoe_chiba_radius": 10,
+    "umap_n_neighbors": 15,
+    "umap_min_dist": 0.1,
+    "seed": 42,
+    "elapsed_seconds": 18.76
+  },
+  {
+    "subset": "FD004",
+    "n_engines": 249,
+    "channels": [
+      "corrected_fan_speed_NRf",
+      "bypass_ratio_BPR",
+      "hpc_outlet_static_pressure_Ps30",
+      "lpt_outlet_temp_T50",
+      "bypass_duct_pressure_P15",
+      "lpt_coolant_bleed_W32",
+      "corrected_core_speed_NRc",
+      "physical_core_speed_Nc"
+    ],
+    "sakoe_chiba_radius": 10,
+    "umap_n_neighbors": 15,
+    "umap_min_dist": 0.1,
+    "seed": 42,
+    "elapsed_seconds": 119.96
+  }
+]

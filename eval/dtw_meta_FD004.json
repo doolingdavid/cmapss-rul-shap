@@ -1,0 +1,19 @@
+{
+  "subset": "FD004",
+  "n_engines": 249,
+  "channels": [
+    "corrected_fan_speed_NRf",
+    "bypass_ratio_BPR",
+    "hpc_outlet_static_pressure_Ps30",
+    "lpt_outlet_temp_T50",
+    "bypass_duct_pressure_P15",
+    "lpt_coolant_bleed_W32",
+    "corrected_core_speed_NRc",
+    "physical_core_speed_Nc"
+  ],
+  "sakoe_chiba_radius": 10,
+  "umap_n_neighbors": 15,
+  "umap_min_dist": 0.1,
+  "seed": 42,
+  "elapsed_seconds": 119.96
+}

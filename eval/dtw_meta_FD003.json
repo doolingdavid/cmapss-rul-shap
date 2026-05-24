@@ -1,0 +1,19 @@
+{
+  "subset": "FD003",
+  "n_engines": 100,
+  "channels": [
+    "hpc_outlet_static_pressure_Ps30",
+    "physical_core_speed_Nc",
+    "corrected_fan_speed_NRf",
+    "lpt_outlet_temp_T50",
+    "corrected_core_speed_NRc",
+    "bleed_enthalpy_htBleed",
+    "physical_fan_speed_Nf",
+    "fuel_flow_ratio_phi"
+  ],
+  "sakoe_chiba_radius": 10,
+  "umap_n_neighbors": 15,
+  "umap_min_dist": 0.1,
+  "seed": 42,
+  "elapsed_seconds": 18.76
+}

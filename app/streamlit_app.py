@@ -32,6 +32,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -70,6 +71,16 @@ def load_shap(subset: str, window: int, split: str) -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def load_metrics(subset: str, window: int) -> dict:
     return json.loads((EVAL_DIR / f"metrics_{subset}_w{window}.json").read_text())
+
+
+@st.cache_data(show_spinner=False)
+def load_umap(subset: str) -> pd.DataFrame:
+    return pd.read_parquet(EVAL_DIR / f"dtw_umap_{subset}.parquet")
+
+
+@st.cache_data(show_spinner=False)
+def load_dtw_meta(subset: str) -> dict:
+    return json.loads((EVAL_DIR / f"dtw_meta_{subset}.json").read_text())
 
 
 @st.cache_data(show_spinner="Loading raw sensor traces…")
@@ -409,8 +420,8 @@ with st.sidebar:
 
 # ---------------- tabs
 
-tab_engine, tab_global, tab_run = st.tabs(
-    ["Engine view + SHAP", "Global importance", "Run metadata"]
+tab_engine, tab_global, tab_umap, tab_run = st.tabs(
+    ["Engine view + SHAP", "Global importance", "Cohort UMAP", "Run metadata"]
 )
 
 # === Tab 1: per-engine trajectory + click-to-SHAP ============================
@@ -562,7 +573,81 @@ with tab_global:
         )
         st.dataframe(mean_abs.style.format("{:.4f}"), use_container_width=True)
 
-# === Tab 3: Run metadata =====================================================
+# === Tab 3: Cohort UMAP ======================================================
+with tab_umap:
+    st.subheader(f"Cohort UMAP — {subset}, all {sum(load_umap(subset).shape[:1])} engines")
+    st.caption(
+        "Each point is one engine, positioned by **multivariate DTW** "
+        "between its run-to-failure sensor trajectory and every other "
+        "engine's, then projected to 2-D by **UMAP** "
+        "(`metric=\"precomputed\"`). Distances are computed on the "
+        "**top-8 SHAP-importance channels** for this subset, so engines "
+        "that move similarly on the sensors the model leans on cluster "
+        "together."
+    )
+
+    umap_df = load_umap(subset)
+    dtw_meta = load_dtw_meta(subset)
+
+    color_options = {
+        "failure_cycle (engine longevity)": "failure_cycle",
+        "split (train / test / validate)": "split",
+        "top SHAP feature at peak prediction": "top_feature_at_peak",
+        "model's max P(RUL ≤ 50)": "max_prob_w50",
+    }
+    chosen_label = st.selectbox("Color points by:", list(color_options.keys()), index=0)
+    color_col = color_options[chosen_label]
+
+    is_continuous = umap_df[color_col].dtype.kind in "fi"
+    fig_umap = px.scatter(
+        umap_df,
+        x="umap_x", y="umap_y",
+        color=color_col,
+        color_continuous_scale="Viridis" if is_continuous else None,
+        hover_data={
+            "engine_id": True,
+            "split": True,
+            "failure_cycle": True,
+            "max_prob_w50": ":.3f",
+            "cycle_at_peak": True,
+            "top_feature_at_peak": True,
+            "umap_x": False, "umap_y": False,
+        },
+        labels={"umap_x": "UMAP-1", "umap_y": "UMAP-2"},
+    )
+    fig_umap.update_traces(
+        marker=dict(size=11, line=dict(color="black", width=0.4), opacity=0.9)
+    )
+    fig_umap.update_layout(
+        height=560,
+        margin=dict(l=10, r=10, t=10, b=10),
+        legend=dict(title_text=color_col, orientation="v"),
+    )
+    st.plotly_chart(fig_umap, use_container_width=True)
+
+    with st.expander("Precomputation details"):
+        cols = st.columns(2)
+        with cols[0]:
+            st.markdown(
+                f"**Engines:** {dtw_meta['n_engines']}  \n"
+                f"**Sakoe-Chiba radius:** {dtw_meta['sakoe_chiba_radius']}  \n"
+                f"**UMAP n_neighbors:** {dtw_meta['umap_n_neighbors']}  \n"
+                f"**UMAP min_dist:** {dtw_meta['umap_min_dist']}  \n"
+                f"**Wall time:** {dtw_meta['elapsed_seconds']:.1f}s"
+            )
+        with cols[1]:
+            st.markdown("**DTW channels (top-8 by mean(|SHAP|), W=50):**")
+            for c in dtw_meta["channels"]:
+                st.markdown(f"- `{c}`")
+
+    st.caption(
+        "Hover any point to see the engine ID. To inspect that engine's "
+        "P(class=1) trajectory + per-cycle SHAP, switch to the "
+        "**Engine view + SHAP** tab and select the engine in the sidebar."
+    )
+
+
+# === Tab 4: Run metadata =====================================================
 with tab_run:
     st.subheader(f"Run metadata — {subset}, W={window}")
     cols = st.columns(2)
