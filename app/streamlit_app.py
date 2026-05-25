@@ -34,11 +34,13 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 
 from src.cmapss.load import (
     download_cmapss as _download_cmapss,
     read_subset as _read_cmapss_subset,
 )
+from src.cmapss.split import split_engines as _split_engines
 
 ROOT = Path(__file__).resolve().parents[1]
 MODELS_DIR = ROOT / "models"
@@ -90,10 +92,155 @@ def load_raw_features(subset: str) -> pd.DataFrame:
     return _read_cmapss_subset(subset, data_dir)
 
 
+@st.cache_data(show_spinner="Reconstructing training split…")
+def load_train_split(subset: str) -> pd.DataFrame:
+    """The engine-grouped TRAIN split for ``subset`` in physical units, with
+    ``RUL`` and ``y_20`` / ``y_50`` attached.
+
+    Re-derives the *exact* deterministic split (seed=42, 60/20/20, grouped by
+    engine) the boosters were trained on, so the parallel-coordinates
+    background is the literal training data for the selected model. Values are
+    in physical units rather than the z-scored inputs the booster consumes;
+    z-scoring is an affine per-column map, which HiPlot's per-axis autoscaling
+    renders identically — only the tick labels change (e.g. 1590 °R vs +1.8σ).
+    """
+    raw = load_raw_features(subset)
+    return _split_engines(raw, seed=42, windows=WINDOWS).train.reset_index(drop=True)
+
+
+@st.cache_data(show_spinner="Building parallel-coordinates view…")
+def build_hiplot_html(
+    subset: str,
+    window: int,
+    split: str,
+    engine_id: int,
+    clicked_cycle: int,
+    n_axes: int,
+    max_bg: int,
+    seed: int = 42,
+) -> str:
+    """Render a HiPlot parallel-coordinates plot to a standalone HTML string.
+
+    Background = the training-split rows for ``(subset, window)`` over the
+    model's ``n_axes`` most important features (by global mean|SHAP|) plus
+    RUL, colored by whether each row sits inside the failure window. The
+    clicked (engine, cycle) is overlaid as a single near-black line so a
+    reviewer can see it tracks the in-window cloud along the very sensors its
+    SHAP bars flagged — the "no black box" argument, made visually.
+
+    HiPlot does not embed cleanly as a native Streamlit chart; we serialize
+    to HTML here and inject it with ``components.html`` at the call site.
+    """
+    import hiplot as hip  # lazy: keeps app cold-start light
+
+    axes = _global_importance_order(subset, window, split)[: max(1, n_axes)]
+    ycol = f"y_{window}"
+    # ASCII-only category labels: HiPlot's frontend matches the colorby
+    # values against the `colors`-map keys, and non-ASCII glyphs (≤, ·, ◆)
+    # can round-trip inconsistently and silently disable the color scale.
+    in_lab = f"RUL_le_{window}"
+    out_lab = f"RUL_gt_{window}"
+    sel_lab = "selected"
+
+    train = load_train_split(subset)
+    bg = train[axes + ["RUL", ycol]].copy()
+    bg["group"] = np.where(bg[ycol].to_numpy() == 1, in_lab, out_lab)
+    bg = bg.drop(columns=[ycol])
+    # Stratified downsample by class so neither dominates and the cloud stays
+    # translucent enough for the overlaid black line to read.
+    if len(bg) > max_bg:
+        bg = bg.groupby("group", group_keys=False).sample(
+            frac=max_bg / len(bg), random_state=seed
+        )
+
+    # The clicked cycle, in the same physical units.
+    raw = load_raw_features(subset)
+    eng = raw.loc[raw["engine_id"] == engine_id]
+    fail_cycle = int(eng["cycle"].max())
+    srow = eng.loc[eng["cycle"] == clicked_cycle, axes].copy()
+    srow["RUL"] = fail_cycle - int(clicked_cycle)
+    srow["group"] = sel_lab
+
+    plot_cols = axes + ["RUL", "group"]
+    # Selected row last so it draws on top of the background cloud.
+    df = pd.concat([bg[plot_cols], srow[plot_cols]], ignore_index=True)
+
+    exp = hip.Experiment.from_dataframe(df)
+    exp.colorby = "group"
+    # Force the column categorical and let HiPlot's built-in palette assign
+    # the three colors. An explicit `colors` map appears to suppress the
+    # scale in this build (lines render all-black), so we rely on the palette
+    # instead. The labels sort alphabetically RUL_gt < RUL_le < selected, so
+    # the palette lands blue → out-of-window, orange → in-window, red →
+    # selected (which still stands out). NB: in HiPlot's color menu the
+    # active color axis renders *greyed* — that's the "currently selected"
+    # marker, not "uncolorable".
+    exp.parameters_definition["group"].type = hip.ValueType.CATEGORICAL
+    # from_dataframe sets axis order = column order, but the parallel plot
+    # lays axes out right-to-left, so the most-important feature ends up on
+    # the right. Reverse the order list so it lands on the left.
+    exp.display_data(hip.Displays.PARALLEL_PLOT)["order"] = list(reversed(plot_cols))
+    return exp.to_html()
+
+
+def _inject_thick_selected(html: str, width: int) -> str:
+    """Make the lone ``selected`` line draw thick and fully opaque, on load.
+
+    HiPlot has no per-line width API, and it dims non-highlighted lines by
+    baking a *low alpha into the stroke color itself* (normal pass uses
+    ``rgba(r,g,b,<low>)``; only its interactive highlight pass uses alpha 1 at
+    width 4) — so the single clicked-cycle trace is both thin and nearly
+    transparent. We monkeypatch the canvas 2D ``stroke()``: when the stroke
+    color is red-dominant (the ``selected`` class — distinct from the
+    blue/orange background) we redraw it at ``width`` px and force the color
+    to *full opacity* (``globalAlpha`` is useless here because the alpha lives
+    in the color). Crucially we also wrap ``getContext`` so the patch is
+    installed before HiPlot's first paint, giving a thick trace on load
+    without any interaction. The interval re-patches canvases made later.
+    """
+    script = """
+<script>(function(){
+  var W=%d;
+  function rgbOf(s){s=(''+s).trim();var m=s.match(/^#?([0-9a-fA-F]{6})$/);
+    if(m){var n=parseInt(m[1],16);return [(n>>16)&255,(n>>8)&255,n&255];}
+    m=s.match(/rgba?\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)/);
+    if(m){return [+m[1],+m[2],+m[3]];}return null;}
+  function patch(ctx){if(!ctx||ctx.__hipThick)return;ctx.__hipThick=true;
+    var os=ctx.stroke;
+    ctx.stroke=function(){
+      var c=rgbOf(this.strokeStyle);
+      if(c&&c[0]>150&&c[1]<90&&c[2]<90){
+        var lw=this.lineWidth,ss=this.strokeStyle;
+        this.lineWidth=W;this.strokeStyle='rgb('+c[0]+','+c[1]+','+c[2]+')';
+        os.apply(this,arguments);
+        this.lineWidth=lw;this.strokeStyle=ss;
+      }else{os.apply(this,arguments);}
+    };}
+  var og=HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext=function(t){var ctx=og.apply(this,arguments);
+    if(t==='2d'){try{patch(ctx);}catch(e){}}return ctx;};
+  setInterval(function(){var cs=document.getElementsByTagName('canvas');
+    for(var i=0;i<cs.length;i++){try{patch(cs[i].getContext('2d'));}catch(e){}}},400);
+})();</script>
+""" % int(width)
+    if "</body>" in html:
+        return html.replace("</body>", script + "</body>", 1)
+    return html + script
+
+
 # ---------------------------------------------------------------- helpers
 
 def _feature_names_from_shap(shap_df: pd.DataFrame) -> list[str]:
     return [c[len("shap__"):] for c in shap_df.columns if c.startswith("shap__")]
+
+
+def _global_importance_order(subset: str, window: int, split: str) -> list[str]:
+    """Model feature names ordered by descending global mean(|SHAP|)."""
+    shap_df = load_shap(subset, window, split)
+    feats = _feature_names_from_shap(shap_df)
+    mean_abs = shap_df[[f"shap__{f}" for f in feats]].abs().mean()
+    mean_abs.index = feats
+    return mean_abs.sort_values(ascending=False).index.tolist()
 
 
 def _engine_subset(df: pd.DataFrame, engine_id: int) -> pd.DataFrame:
@@ -537,6 +684,49 @@ with tab_engine:
             engine_raw, engine_shap, chosen_feat, clicked_cycle, window
         )
         st.plotly_chart(fig_feat, use_container_width=True)
+
+    # --- Parallel coordinates: this cycle against the training cloud ---------
+    st.markdown("---")
+    st.markdown("### Where this cycle sits in the training data (HiPlot)")
+    st.caption(
+        f"Each thin line is one **training-split** row for *{subset}* over the "
+        "model's input features (physical units) plus RUL, colored by window "
+        f"membership: **blue** = `RUL_gt_{window}` (out), **orange** = "
+        f"`RUL_le_{window}` (in-window), and **red** = the **`selected`** "
+        "cycle you clicked above (see the color legend in the plot). If "
+        "LightGBM weren't a black box but merely organizing the named sensors, "
+        "the clicked cycle should track the in-window cloud along exactly the "
+        "axes its SHAP waterfall flagged. Drag on any axis to brush; reorder "
+        "axes by dragging their labels."
+    )
+    _all_feats = _global_importance_order(subset, window, split)
+    hc1, hc2, hc3 = st.columns(3)
+    with hc1:
+        n_axes = st.slider(
+            "Feature axes shown (most important first)",
+            min_value=4, max_value=len(_all_feats),
+            value=min(12, len(_all_feats)),
+            key=f"hip_axes_{subset}_{window}_{split}",
+        )
+    with hc2:
+        max_bg = st.select_slider(
+            "Max training rows drawn",
+            options=[500, 1000, 1500, 2500, 4000],
+            value=1500,
+            key=f"hip_bg_{subset}_{window}_{split}",
+        )
+    with hc3:
+        sel_width = st.slider(
+            "Selected line width (px)",
+            min_value=1, max_value=24, value=11,
+            key=f"hip_w_{subset}_{window}_{split}",
+        )
+    hip_html = build_hiplot_html(
+        subset, window, split, int(engine_id), int(clicked_cycle),
+        int(n_axes), int(max_bg),
+    )
+    hip_html = _inject_thick_selected(hip_html, int(sel_width))
+    components.html(hip_html, height=680, scrolling=True)
 
 # === Tab 2: Global importance ================================================
 with tab_global:
