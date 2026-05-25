@@ -122,8 +122,9 @@ def build_hiplot_html(
     """Render a HiPlot parallel-coordinates plot to a standalone HTML string.
 
     Background = the training-split rows for ``(subset, window)`` over the
-    model's ``n_axes`` most important features (by global mean|SHAP|) plus
-    RUL, colored by whether each row sits inside the failure window. The
+    ``n_axes`` features with the largest |SHAP| **at the clicked cycle** (so
+    the axis order matches the SHAP waterfall) plus RUL, colored by whether
+    each row sits inside the failure window. The
     clicked (engine, cycle) is overlaid as a single near-black line so a
     reviewer can see it tracks the in-window cloud along the very sensors its
     SHAP bars flagged — the "no black box" argument, made visually.
@@ -133,7 +134,9 @@ def build_hiplot_html(
     """
     import hiplot as hip  # lazy: keeps app cold-start light
 
-    axes = _global_importance_order(subset, window, split)[: max(1, n_axes)]
+    axes = _local_importance_order(
+        subset, window, split, engine_id, clicked_cycle
+    )[: max(1, n_axes)]
     ycol = f"y_{window}"
     # ASCII-only category labels: HiPlot's frontend matches the colorby
     # values against the `colors`-map keys, and non-ASCII glyphs (≤, ·, ◆)
@@ -241,6 +244,26 @@ def _global_importance_order(subset: str, window: int, split: str) -> list[str]:
     mean_abs = shap_df[[f"shap__{f}" for f in feats]].abs().mean()
     mean_abs.index = feats
     return mean_abs.sort_values(ascending=False).index.tolist()
+
+
+def _local_importance_order(
+    subset: str, window: int, split: str, engine_id: int, clicked_cycle: int
+) -> list[str]:
+    """Feature names ordered by descending |SHAP| **at the clicked cycle**.
+
+    Matches the ranking in the SHAP waterfall / sensor drill-down for the same
+    point, so the leftmost HiPlot axes are the sensors the model leaned on
+    hardest for *this* prediction. Falls back to the global order if the row
+    isn't found.
+    """
+    shap_df = load_shap(subset, window, split)
+    feats = _feature_names_from_shap(shap_df)
+    row = shap_df[(shap_df["engine_id"] == engine_id) & (shap_df["cycle"] == clicked_cycle)]
+    if row.empty:
+        return _global_importance_order(subset, window, split)
+    r = row.iloc[0]
+    abs_shap = {f: abs(float(r[f"shap__{f}"])) for f in feats}
+    return sorted(feats, key=lambda f: abs_shap[f], reverse=True)
 
 
 def _engine_subset(df: pd.DataFrame, engine_id: int) -> pd.DataFrame:
@@ -696,14 +719,15 @@ with tab_engine:
         "cycle you clicked above (see the color legend in the plot). If "
         "LightGBM weren't a black box but merely organizing the named sensors, "
         "the clicked cycle should track the in-window cloud along exactly the "
-        "axes its SHAP waterfall flagged. Drag on any axis to brush; reorder "
-        "axes by dragging their labels."
+        "axes its SHAP waterfall flagged — and those are the **leftmost** axes "
+        "here, ordered left-to-right by |SHAP| at this cycle. Drag on any axis "
+        "to brush; reorder axes by dragging their labels."
     )
     _all_feats = _global_importance_order(subset, window, split)
     hc1, hc2, hc3 = st.columns(3)
     with hc1:
         n_axes = st.slider(
-            "Feature axes shown (most important first)",
+            "Feature axes shown (by |SHAP| at clicked cycle)",
             min_value=4, max_value=len(_all_feats),
             value=min(12, len(_all_feats)),
             key=f"hip_axes_{subset}_{window}_{split}",
