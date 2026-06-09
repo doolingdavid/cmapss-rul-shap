@@ -1,0 +1,33 @@
+name: keep-streamlit-awake
+
+# Redundancy hedge for the Sandia talk: keeps the two Streamlit Community Cloud
+# demos awake so they remain a live backup if the (always-on) Hugging Face Spaces
+# mirrors have a bad day. Streamlit Cloud sleeps after ~12h of no traffic; we
+# render both apps in a headless browser every 6h (≥2x margin), plus a manual
+# "Run workflow" button to warm them on demand right before presenting.
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours (sleep threshold is ~12h)
+  workflow_dispatch: {}      # manual trigger from the Actions tab
+
+# Don't pile up overlapping runs.
+concurrency:
+  group: keep-streamlit-awake
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Playwright (chromium only)
+        run: |
+          npm init -y
+          npm install playwright
+          npx playwright install --with-deps chromium
+      - name: Visit both Streamlit apps
+        run: node keepalive.js
