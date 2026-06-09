@@ -73,6 +73,20 @@ cold-start gamble. Two independent always-available hosts + the YouTube floor.
 - The deck's per-demo "Switch to live app" boxes already print **all three** links
   (Streamlit primary / HF mirror / YouTube ▶) — unchanged this session. If
   Streamlit is ever down on the day, click the HF mirror line; it's on every slide.
+- **Streamlit Plotly bundle fix (later 2026-06-08).** After waking, the turbofan
+  Streamlit app threw `Failed to fetch dynamically imported module:
+  .../static/js/PlotlyChart.<hash>.js` when clicking a trace point — the lazy
+  Plotly chunk hash drifted out of sync with the loaded page shell across a
+  sleep→wake rebuild. Fix: **pinned `streamlit==1.57.0` and `plotly==6.7.0`** (was
+  `streamlit>=1.36,<1.58` / `plotly>=5.22`) in `requirements.txt` + `pyproject.toml`
+  (+ `uv lock`), so every rebuild produces identical chunk hashes. Pushed
+  `249ce1c` → auto-triggered a clean Streamlit Cloud redeploy. Keep-alive holding
+  it awake also stops the sleep→wake rebuild cycle that caused the drift. HF mirror
+  is the always-on failsafe for the same click→SHAP-waterfall interaction.
+- **Keep-alive hardened** (`e7edbb7`): the headless visitor now waits 8s for the
+  sleep UI to render before checking for the "get this app back up" button and
+  waits for it to disappear — the first version checked too early and left the
+  quantum app asleep. Verified: run 27176244043 detected quantum asleep and woke it.
 
 ## 2026-06-06 session (later) — slide-6 indicator-symbol fix
 
