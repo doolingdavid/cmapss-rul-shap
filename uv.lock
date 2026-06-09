@@ -1648,11 +1648,11 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.0" },
     { name = "optuna", specifier = ">=3.5" },
     { name = "pandas", specifier = ">=2.1" },
-    { name = "plotly", specifier = ">=5.22" },
+    { name = "plotly", specifier = "==6.7.0" },
     { name = "pyarrow", specifier = ">=16" },
     { name = "requests", specifier = ">=2.31" },
     { name = "scikit-learn", specifier = ">=1.4" },
-    { name = "streamlit", specifier = ">=1.36,<1.58" },
+    { name = "streamlit", specifier = "==1.57.0" },
 ]
 
 [[package]]
