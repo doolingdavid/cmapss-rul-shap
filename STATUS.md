@@ -1,6 +1,9 @@
 # Sandia talk — current state and resume recipe
 
-Last updated: 2026-06-06 (see "## 2026-06-06 session" below: **both demo
+Last updated: 2026-06-08 (see "## 2026-06-08 session" below: **demo reliability
+hardened** — both HF Spaces upgraded to `cpu-upgrade` always-on; Streamlit Cloud
+kept awake as a redundancy hedge via a GitHub Actions + Playwright keep-alive.
+⚠️ Both have post-talk teardown steps — see that section.) Prior 2026-06-06 (**both demo
 screencasts recorded, uploaded to YouTube unlisted, and linked in both the PDF
 and PPTX** — link-only since the deck is emailed; deck still 34 frames, PPTX now
 19 hotspots.) Prior 2026-06-04 (see "## 2026-06-04 session" below: **TWO new slides
@@ -41,6 +44,35 @@ At **33 frames** the deck runs ~65 min at 2 min/slide; **needs a trim pass** to
 fit the 45-min slot — trim elsewhere (quantum q01–q05), the OSINT module stays.
 *(Update 2026-06-01: David is now MORE worried the talk runs SHORT — added a
 skippable backup section as buffer. See "## 2026-06-01 session" below.)*
+
+## 2026-06-08 session — demo reliability hardened (HF always-on + Streamlit hedge)
+
+Goal: guarantee both live demos are ready at the **2026-06-11** interview with no
+cold-start gamble. Two independent always-available hosts + the YouTube floor.
+
+- **HF Spaces upgraded to paid always-on.** Both mirrors moved from `cpu-basic`
+  (sleeps after ~48h) to **`cpu-upgrade`** ($0.03/hr, 8 vCPU/32 GB) — paid Spaces
+  **never sleep by default**, killing the wake-up risk *and* the "SessionInfo"
+  stale-tab popup (that was a sleep artifact). Verified both:
+  `python hf_deploy.py status {cmapss|quantum}` → `stage=RUNNING hardware=cpu-upgrade`.
+  This **reverses** the earlier 2026-06-06 "not worth paying for never-sleep" call —
+  reframed from cosmetics to *guaranteed readiness*, which at ~$0.72/day each is cheap.
+  ⚠️ **AFTER THE TALK: downgrade both to CPU Basic or Pause** (Settings → Space
+  hardware) to stop the meter — else ~$43/mo for the pair. Paused/basic = free.
+- **Streamlit Cloud kept as a redundancy hedge** (in case HF has a bad day during
+  the talk — *not* as primary). Community Cloud has **no paid always-on tier**, so
+  it's kept awake with a **GitHub Actions cron + Playwright** keep-alive in the
+  `cmapss-rul-shap` repo: `.github/workflows/keepalive.yml` + `keepalive.js`,
+  every 6h (sleep threshold ~12h) + manual `workflow_dispatch`. A bare HTTP ping
+  does NOT keep Streamlit awake (it tracks the websocket session), so the job
+  renders both apps in headless chromium and clicks the wake button if asleep.
+  Pushed to `main` (`27f9855`); first manual run **27175918101 = green**, both
+  apps rendered (`CMAPSS RUL … · Streamlit` + quantum, no errors).
+  ⚠️ **AFTER THE TALK: disable the workflow** (Actions tab → keep-streamlit-awake
+  → ⋯ → Disable workflow) so it stops running indefinitely.
+- The deck's per-demo "Switch to live app" boxes already print **all three** links
+  (Streamlit primary / HF mirror / YouTube ▶) — unchanged this session. If
+  Streamlit is ever down on the day, click the HF mirror line; it's on every slide.
 
 ## 2026-06-06 session (later) — slide-6 indicator-symbol fix
 
